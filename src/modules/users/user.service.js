@@ -1,5 +1,6 @@
 import { DatabaseRepository } from "../../db/db.repository.js";
 import { userModel } from "../../db/models/user.model.js";
+import { profileViewsModel } from "../../db/models/profileViews.model.js";
 import {
   hashPassword,
   matchPassword,
@@ -7,9 +8,19 @@ import {
 import jwt from "jsonwebtoken";
 
 const userRepo = new DatabaseRepository(userModel);
+const profileViewRepo = new DatabaseRepository(profileViewsModel);
 
 export const createUser = async (req, res, next) => {
   const { firstName, lastName, email, password, gender } = req.body;
+  console.log(req.files);
+  if (!req.files) {
+    return next(new Error("photo files are required", { cause: 400 }));
+  }
+
+  const photos = [];
+  for (const file of req.files.attachments) {
+    photos.push(file.path);
+  }
 
   const existingUser = await userRepo.findOne({ email });
   if (existingUser) {
@@ -22,6 +33,8 @@ export const createUser = async (req, res, next) => {
     email,
     password: hashedPassword,
     gender,
+    profilePicture: req.files.attachment[0].path,
+    coverPictures: photos,
   });
   res.status(201).json({ message: "user has been created successfully" });
 };
@@ -49,12 +62,24 @@ export const signIn = async (req, res, next) => {
 };
 
 export const getProfile = async (req, res, next) => {
-  const id = req.user?.id;
-
-  const user = await userRepo.findById(id, { password: 0 });
+  const { id: profileId } = req.params;
+  const viewerId = req.user?.id;
+  const user = await userRepo.findById(profileId, { password: 0 });
   if (!user) {
     return next(new Error("user not found", { cause: 400 }));
   }
+  if (viewerId && viewerId !== profileId) {
+    try {
+      await profileViewRepo.create({ profileId, viewerId });
+      user.totalViews += 1;
+      await user.save();
+    } catch (error) {
+      if (error.code !== 11000) {
+        return next(error);
+      }
+    }
+  }
+
   res.status(200).json(user);
 };
 

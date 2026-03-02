@@ -41,6 +41,12 @@ const userSchema = new mongoose.Schema(
       enum: Object.values(GenderEnum),
       default: GenderEnum.male,
     },
+    totalViews: {
+      type: Number,
+      default: 0,
+    },
+    profilePicture: String,
+    coverPictures: [String],
   },
   {
     timestamps: true,

@@ -14,6 +14,7 @@ export const bootstrap = () => {
   app.get("/", (req, res) => {
     res.status(200).json({ message: "welcome to app" });
   });
+  app.use("/uploads", express.static("uploads"));
   app.use("/users", userRouter);
   app.use("/messages", messageRouter);
   app.use((req, res) => {
@@ -21,9 +22,7 @@ export const bootstrap = () => {
   });
 
   app.use((err, req, res, next) => {
-    res
-      .status(err.cause || 500)
-      .json({ message: err.message, stack: err.stack });
+    res.status(err.cause || 500).json({ type: err.name, message: err.message });
   });
 
   app.listen(process.env.PORT, () => {

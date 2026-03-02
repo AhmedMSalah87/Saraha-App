@@ -12,3 +12,9 @@ export const providerEnum = {
   system: "system",
   google: "google",
 };
+
+export const fileEnum = {
+  image: ["image/jpeg", "image/png"],
+  video: ["video/mpeg"],
+  pdf: ["application/pdf"],
+};
