@@ -20,7 +20,8 @@ export const authMiddleware = (req, res, next) => {
   if (!token) {
     return next(new Error("unauthorized: no token provided", { cause: 401 }));
   }
-  const decoded = jwt.verify(token, process.env.SECRET_KEY);
+  const decoded = jwt.verify(token, process.env.ACCESS_SECRET_KEY);
+
   req.user = decoded;
   next();
 };

@@ -45,8 +45,16 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    profilePicture: String,
-    coverPictures: [String],
+    profilePicture: {
+      public_id: String,
+      secure_url: String,
+    },
+    coverPictures: [
+      {
+        public_id: String,
+        secure_url: String,
+      },
+    ],
   },
   {
     timestamps: true,

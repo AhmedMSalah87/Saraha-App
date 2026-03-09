@@ -6,21 +6,15 @@ import {
   matchPassword,
 } from "../../common/utils/security/hash.js";
 import jwt from "jsonwebtoken";
+import cloudinary, {
+  uploadToCloudinary,
+} from "../../common/utils/cloudinary.js";
 
 const userRepo = new DatabaseRepository(userModel);
 const profileViewRepo = new DatabaseRepository(profileViewsModel);
 
 export const createUser = async (req, res, next) => {
   const { firstName, lastName, email, password, gender } = req.body;
-  console.log(req.files);
-  if (!req.files) {
-    return next(new Error("photo files are required", { cause: 400 }));
-  }
-
-  const photos = [];
-  for (const file of req.files.attachments) {
-    photos.push(file.path);
-  }
 
   const existingUser = await userRepo.findOne({ email });
   if (existingUser) {
@@ -33,10 +27,55 @@ export const createUser = async (req, res, next) => {
     email,
     password: hashedPassword,
     gender,
-    profilePicture: req.files.attachment[0].path,
-    coverPictures: photos,
   });
   res.status(201).json({ message: "user has been created successfully" });
+};
+
+export const uploadPhoto = async (req, res, next) => {
+  const userId = req.user?.id;
+  if (!req.files) {
+    return next(new Error("photo files are required", { cause: 400 }));
+  }
+
+  const { public_id, secure_url } = await uploadToCloudinary(
+    "users",
+    req.files.avatar[0].buffer,
+    userId,
+  );
+  const gallery = [];
+  for (const file of req.files.gallery) {
+    const { public_id, secure_url } = await uploadToCloudinary(
+      "users",
+      file.buffer,
+      userId,
+    );
+
+    gallery.push({ public_id, secure_url });
+  }
+
+  await userRepo.update(userId, {
+    profilePicture: { public_id, secure_url },
+    coverPictures: gallery,
+  });
+
+  res.status(201).json({ message: "photos has been uploaded succcessfully" });
+};
+
+export const deleteProfileImage = async (req, res, next) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return next(new Error("unauthorized user", { cause: 401 }));
+  }
+  const user = await userRepo.findById(userId);
+  if (!user) {
+    return next(new Error("user not found", { cause: 404 }));
+  }
+  await cloudinary.uploader.destroy(user.profilePicture.public_id);
+  user.profilePicture = undefined;
+  await user.save();
+  res
+    .status(200)
+    .json({ message: "profile image has been deleted successfully" });
 };
 
 export const signIn = async (req, res, next) => {
@@ -54,11 +93,21 @@ export const signIn = async (req, res, next) => {
   }
   const accessToken = jwt.sign(
     { id: existingUser._id },
-    process.env.SECRET_KEY,
+    process.env.ACCESS_SECRET_KEY,
     { expiresIn: "15m" },
   );
 
-  res.status(200).json({ message: "user logged in successfully", accessToken });
+  const refreshToken = jwt.sign(
+    { id: existingUser._id },
+    process.env.REFRESH_SECRET_KEY,
+    { expiresIn: "30d" },
+  );
+
+  res.status(200).json({
+    message: "user logged in successfully",
+    accessToken,
+    refreshToken,
+  });
 };
 
 export const getProfile = async (req, res, next) => {
@@ -81,6 +130,21 @@ export const getProfile = async (req, res, next) => {
   }
 
   res.status(200).json(user);
+};
+
+export const shareProfileLink = async (req, res, next) => {
+  const { id: profileId } = req.params;
+  const user = await userRepo.findById(profileId, {
+    firstName: 1,
+    lastName: 1,
+    profilePicture: 1,
+  });
+  if (!user) {
+    return next(new Error("user not found", { cause: 404 }));
+  }
+  res
+    .status(200)
+    .json({ user, profileLink: `www.saraha.com/profile/${profileId}` }); //frontend url
 };
 
 export const updateUser = async (req, res, next) => {
@@ -108,6 +172,54 @@ export const updateUser = async (req, res, next) => {
     }
   }
   Object.assign(user, updates);
-  user.save();
+  await user.save();
   res.status(200).json({ message: "user has been updated successfully", user });
+};
+
+export const resetPassword = async (req, res, next) => {
+  const { oldPassword, newPassword } = req.body;
+  const userId = req.user?.id;
+  const user = await userRepo.findById(userId);
+  if (!user) {
+    return next(new Error("user not found", { cause: 404 }));
+  }
+  const isMatched = await matchPassword(oldPassword, user.password);
+  if (!isMatched) {
+    return next(new Error("old password in incorrect", { cause: 400 }));
+  }
+  user.password = await hashPassword(newPassword);
+  await user.save();
+
+  res.status(200).json({ message: "password has been reset successfully" });
+};
+
+export const useRefreshToken = async (req, res, next) => {
+  const auth = req.headers?.authorization;
+  if (!auth) {
+    return next(
+      new Error("no authentication header provided in request", {
+        cause: 401,
+      }),
+    );
+  }
+  const [prefix, token] = auth.split(" ");
+  if (prefix !== "Bearer") {
+    return next(
+      new Error("Invalid authorization header format. Bearer token required", {
+        cause: 401,
+      }),
+    );
+  }
+  if (!token) {
+    return next(new Error("unauthorized: no token provided", { cause: 401 }));
+  }
+  const decoded = jwt.verify(token, process.env.REFRESH_SECRET_KEY);
+
+  const accessToken = jwt.sign(
+    { id: decoded.id },
+    process.env.ACCESS_SECRET_KEY,
+    { expiresIn: "15m" },
+  );
+
+  res.status(200).json({ accessToken });
 };

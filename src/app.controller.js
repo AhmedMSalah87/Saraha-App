@@ -1,13 +1,11 @@
 import express from "express";
 import { checkDBconnection } from "./db/config/connection.js";
 import { userRouter } from "./modules/users/user.controller.js";
-import dotenv from "dotenv";
 import { messageRouter } from "./modules/messages/message.controller.js";
 
 const app = express();
 
 export const bootstrap = () => {
-  dotenv.config();
   app.use(express.json());
   checkDBconnection();
 

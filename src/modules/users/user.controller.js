@@ -1,23 +1,49 @@
 import { Router } from "express";
-import { createUser, getProfile, signIn, updateUser } from "./user.service.js";
+import {
+  createUser,
+  getProfile,
+  useRefreshToken,
+  signIn,
+  updateUser,
+  uploadPhoto,
+  deleteProfileImage,
+  shareProfileLink,
+  resetPassword,
+} from "./user.service.js";
 import { authMiddleware } from "../../common/middleware/auth.js";
+import { optionalAuth } from "../../common/middleware/optionalAuth.js";
 import { sendMessage } from "../messages/message.service.js";
 import { validate } from "../../common/middleware/validate.js";
-import { signInSchema, signUpSchema } from "./user.validation.js";
-import { upload } from "../../common/middleware/multer.js";
+import {
+  profileSchema,
+  signInSchema,
+  signUpSchema,
+} from "./user.validation.js";
+import { uploadCloud } from "../../common/middleware/multer.js";
 import { fileEnum } from "../../common/enums/user.enum.js";
-upload;
+
 export const userRouter = Router();
 
-userRouter.post(
-  "/signup",
-  upload("users", fileEnum.image).fields([
-    { name: "attachment", maxCount: 1 },
-    { name: "attachments", maxCount: 2 },
-  ]),
-  createUser,
-);
+userRouter.post("/signup", validate(signUpSchema), createUser);
 userRouter.post("/signin", validate(signInSchema), signIn);
-userRouter.get("/profile/:id", authMiddleware, getProfile);
+userRouter.get(
+  "/profile/:id",
+  optionalAuth,
+  validate(profileSchema),
+  getProfile,
+);
+userRouter.get("/profile/:id/share", validate(profileSchema), shareProfileLink);
 userRouter.patch("/profile", authMiddleware, updateUser);
 userRouter.post("/:id/messages", sendMessage);
+userRouter.get("/refreshToken", useRefreshToken);
+userRouter.post(
+  "/upload",
+  authMiddleware,
+  uploadCloud(fileEnum.image).fields([
+    { name: "avatar", maxCount: 1 },
+    { name: "gallery", maxCount: 5 },
+  ]),
+  uploadPhoto,
+);
+userRouter.delete("/profileImage", authMiddleware, deleteProfileImage);
+userRouter.patch("/password", authMiddleware, resetPassword);
