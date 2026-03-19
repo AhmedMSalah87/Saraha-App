@@ -55,6 +55,9 @@ const userSchema = new mongoose.Schema(
         secure_url: String,
       },
     ],
+    lastLogoutAt: Date,
+    changePasswordAt: Date,
+    isVerified: Boolean,
   },
   {
     timestamps: true,

@@ -8,7 +8,9 @@ import {
   uploadPhoto,
   deleteProfileImage,
   shareProfileLink,
-  resetPassword,
+  changePassword,
+  logout,
+  verifyEmail,
 } from "./user.service.js";
 import { authMiddleware } from "../../common/middleware/auth.js";
 import { optionalAuth } from "../../common/middleware/optionalAuth.js";
@@ -25,6 +27,7 @@ import { fileEnum } from "../../common/enums/user.enum.js";
 export const userRouter = Router();
 
 userRouter.post("/signup", validate(signUpSchema), createUser);
+userRouter.post("/emailVerification", verifyEmail);
 userRouter.post("/signin", validate(signInSchema), signIn);
 userRouter.get(
   "/profile/:id",
@@ -32,10 +35,11 @@ userRouter.get(
   validate(profileSchema),
   getProfile,
 );
+
 userRouter.get("/profile/:id/share", validate(profileSchema), shareProfileLink);
 userRouter.patch("/profile", authMiddleware, updateUser);
 userRouter.post("/:id/messages", sendMessage);
-userRouter.get("/refreshToken", useRefreshToken);
+userRouter.post("/refreshToken", useRefreshToken);
 userRouter.post(
   "/upload",
   authMiddleware,
@@ -46,4 +50,5 @@ userRouter.post(
   uploadPhoto,
 );
 userRouter.delete("/profileImage", authMiddleware, deleteProfileImage);
-userRouter.patch("/password", authMiddleware, resetPassword);
+userRouter.patch("/password", authMiddleware, changePassword);
+userRouter.post("/logout", authMiddleware, logout);
