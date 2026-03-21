@@ -3,6 +3,7 @@ import { checkDBconnection } from "./db/config/connection.js";
 import { userRouter } from "./modules/users/user.controller.js";
 import { messageRouter } from "./modules/messages/message.controller.js";
 import { connectRedis } from "./db/redis/redis.connect.js";
+import { AppError } from "./errors/appErrors.js";
 
 const app = express();
 
@@ -22,7 +23,12 @@ export const bootstrap = () => {
   });
 
   app.use((err, req, res, next) => {
-    res.status(err.cause || 500).json({ type: err.name, message: err.message });
+    if (err instanceof AppError) {
+      return res
+        .status(err.status)
+        .json({ name: err.code, message: err.message, statusCode: err.status });
+    }
+    res.status(500).json({ name: err.name, message: err.message, err });
   });
 
   app.listen(process.env.PORT, () => {

@@ -2,10 +2,7 @@ import { DatabaseRepository } from "../../db/db.repository.js";
 import { userModel } from "../../db/models/user.model.js";
 import { randomUUID } from "node:crypto";
 import { profileViewsModel } from "../../db/models/profileViews.model.js";
-import {
-  hashPassword,
-  matchPassword,
-} from "../../common/utils/security/hash.js";
+import { hashValue, matchValue } from "../../common/utils/security/hash.js";
 import jwt from "jsonwebtoken";
 import cloudinary, {
   uploadToCloudinary,
@@ -15,6 +12,12 @@ import { sendEmailVerification } from "../../common/utils/sendEmail.js";
 import { generateOTP } from "../../common/utils/generateOTP.js";
 import { redisRepository } from "../../db/redis/redis.repository.js";
 import { providerEnum } from "../../common/enums/user.enum.js";
+import {
+  AuthError,
+  NotFoundError,
+  DuplicateEntryError,
+  ValidationError,
+} from "../../errors/appErrors.js";
 
 export const userRepo = new DatabaseRepository(userModel);
 const profileViewRepo = new DatabaseRepository(profileViewsModel);
@@ -24,9 +27,9 @@ export const createUser = async (req, res, next) => {
 
   const existingUser = await userRepo.findOne({ email });
   if (existingUser) {
-    return next(new Error("email already exists", { cause: 409 }));
+    return next(new DuplicateEntryError(email));
   }
-  const hashedPassword = await hashPassword(password);
+  const hashedPassword = await hashValue(password);
   await userRepo.create({
     firstName,
     lastName,
@@ -37,7 +40,7 @@ export const createUser = async (req, res, next) => {
   });
 
   const otp = generateOTP();
-  const hashedOTP = await hashPassword(otp.toString());
+  const hashedOTP = await hashValue(otp.toString());
 
   await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
 
@@ -62,18 +65,18 @@ export const verifyEmail = async (req, res, next) => {
   });
 
   if (!existingUser) {
-    return next(new Error("user not found", { cause: 404 }));
+    return next(new NotFoundError("user"));
   }
   const hashedOTP = await redisRepository.getCache(`otp:${email}`);
 
   if (!hashedOTP) {
-    return next(new Error("otp has expired", { cause: 401 }));
+    return next(new AuthError("OTP has expired", "OTP_EXPIRED"));
   }
 
-  const isMatched = await matchPassword(otp, hashedOTP);
+  const isMatched = await matchValue(otp, hashedOTP);
 
   if (!isMatched) {
-    return next(new Error("otp is invalid"));
+    return next(new ValidationError("Invalid OTP"));
   }
 
   existingUser.isVerified = true;
@@ -87,7 +90,7 @@ export const verifyEmail = async (req, res, next) => {
 export const uploadPhoto = async (req, res, next) => {
   const userId = req.user?._id;
   if (!req.files) {
-    return next(new Error("photo files are required", { cause: 400 }));
+    return next(new ValidationError("photos are required"));
   }
 
   const { public_id, secure_url } = await uploadToCloudinary(
@@ -135,12 +138,12 @@ export const signIn = async (req, res, next) => {
   });
 
   if (!existingUser) {
-    return next(new Error("user not found", { cause: 404 }));
+    return next(new NotFoundError("user"));
   }
-  const isMatched = await matchPassword(password, existingUser.password);
+  const isMatched = await matchValue(password, existingUser.password);
 
   if (!isMatched) {
-    return next(new Error("invalid password", { cause: 400 }));
+    return next(new ValidationError("Invalid password"));
   }
 
   const jwtid = randomUUID();
@@ -174,19 +177,21 @@ export const getProfile = async (req, res, next) => {
     totalViews: 1,
   });
   if (!profileOwner) {
-    return next(new Error("user not found", { cause: 400 }));
+    return next(new NotFoundError("user"));
   }
   //if owner of profile logged in and  view his profile, he see all its profile content
   if (viewerId == profileId) {
     const originalUser = await userRepo.findById(viewerId, { password: 0 });
     return res.status(200).json(originalUser);
   }
+
   //other users hasve access to view profile of original user but only allowed content not all
   if (viewerId && viewerId !== profileId) {
     try {
       await profileViewRepo.create({ profileId, viewerId });
-      user.totalViews += 1;
-      await user.save();
+      await userRepo.update(profileId, {
+        $inc: { totalViews: 1 },
+      });
     } catch (error) {
       if (error.code !== 11000) {
         return next(error);
@@ -205,7 +210,7 @@ export const shareProfileLink = async (req, res, next) => {
     profilePicture: 1,
   });
   if (!user) {
-    return next(new Error("user not found", { cause: 404 }));
+    return next(new NotFoundError("user"));
   }
   res
     .status(200)
@@ -230,7 +235,7 @@ export const updateUser = async (req, res, next) => {
       _id: { $ne: userId },
     });
     if (emailUsed) {
-      return next(new Error("email already exists", { cause: 409 }));
+      return next(new DuplicateEntryError(emailUsed));
     }
   }
   Object.assign(user, updates);
@@ -242,11 +247,11 @@ export const changePassword = async (req, res, next) => {
   const { oldPassword, newPassword } = req.body;
   const user = req.user;
 
-  const isMatched = await matchPassword(oldPassword, user.password);
+  const isMatched = await matchValue(oldPassword, user.password);
   if (!isMatched) {
-    return next(new Error("old password in incorrect", { cause: 400 }));
+    return next(new ValidationError("Invalid password"));
   }
-  user.password = await hashPassword(newPassword);
+  user.password = await hashValue(newPassword);
   user.changePasswordAt = new Date();
   await user.save();
 
@@ -256,30 +261,24 @@ export const changePassword = async (req, res, next) => {
 export const useRefreshToken = async (req, res, next) => {
   const auth = req.headers?.authorization;
   if (!auth) {
-    return next(
-      new Error("no authentication header provided in request", {
-        cause: 401,
-      }),
-    );
+    return next(new AuthError("no authentication header provided in request"));
   }
   const [prefix, token] = auth.split(" ");
   if (prefix !== "Bearer") {
     return next(
-      new Error("Invalid authorization header format. Bearer token required", {
-        cause: 401,
-      }),
+      new AuthError(
+        "Invalid authorization header format. Bearer token required",
+      ),
     );
   }
   if (!token) {
-    return next(new Error("unauthorized: no token provided", { cause: 401 }));
+    return next(new AuthError("no token provided"));
   }
   const decoded = jwt.verify(token, process.env.REFRESH_SECRET_KEY);
   const revokeToken = await tokenModel.findOne({ tokenId: decoded.jti });
   if (revokeToken) {
     return next(
-      new Error("token invalidated. you already logged out from system", {
-        cause: 401,
-      }),
+      new AuthError("token invalidated. you already logged out from system"),
     );
   }
 

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { tokenModel } from "../../db/models/token.model.js";
+import { AuthError } from "../../errors/appErrors.js";
 
 export const optionalAuth = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -13,9 +14,7 @@ export const optionalAuth = async (req, res, next) => {
   const revokeToken = await tokenModel.findOne({ tokenId: decoded.jti });
   if (revokeToken) {
     return next(
-      new Error("token revoked. you already logged out from system", {
-        cause: 401,
-      }),
+      new AuthError("token revoked. you already logged out from system"),
     );
   }
 
