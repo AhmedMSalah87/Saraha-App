@@ -198,8 +198,7 @@ export const signIn = async (req, res, next) => {
   const isMatched = await matchValue(password, existingUser.password);
 
   if (!isMatched) {
-    const remainingTime = req.rateLimit.resetTime;
-    const remainingMinutes = getRemainingTime(remainingTime);
+    const remainingMinutes = getRemainingTime(req.rateLimit.resetTime);
     const remainingAttempts = req.rateLimit.remaining;
     return next(
       new ValidationError(
