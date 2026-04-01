@@ -23,7 +23,18 @@ export const signInSchema = {
 };
 
 export const profileSchema = {
-  params: joi.object({
-    id: validationRules.id.required(),
-  }),
+  params: joi
+    .object({
+      id: validationRules.id.required(),
+    })
+    .required(),
+};
+
+export const changePasswordSchema = {
+  body: joi
+    .object({
+      oldPassword: validationRules.password.required(),
+      newPassword: validationRules.password.required(),
+    })
+    .required(),
 };

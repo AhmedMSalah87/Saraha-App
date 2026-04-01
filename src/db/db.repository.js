@@ -22,6 +22,10 @@ export class DatabaseRepository {
     return this.model.findByIdAndUpdate(id, data, options);
   }
 
+  async findAndUpdate(filter, update = {}, options = {}) {
+    return this.model.findOneAndUpdate(filter, update, options);
+  }
+
   async delete(id, options = {}) {
     return this.model.findByIdAndDelete(id, options);
   }

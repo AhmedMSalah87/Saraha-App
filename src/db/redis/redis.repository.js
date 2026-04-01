@@ -43,4 +43,33 @@ export const redisRepository = {
       throw err;
     }
   },
+
+  async cacheTTL(key) {
+    try {
+      const ttl = await redisClient.ttl(key);
+      return ttl;
+    } catch (err) {
+      console.error(`Redis TTL error for key ${key}:`, err);
+      throw err;
+    }
+  },
+
+  async increment(key) {
+    try {
+      const value = await redisClient.incr(key);
+      return value;
+    } catch (err) {
+      console.error(`Redis INCR error for key ${key}:`, err);
+      throw err;
+    }
+  },
+
+  async expireCache(key, ttlSeconds) {
+    try {
+      await redisClient.expire(key, ttlSeconds);
+    } catch (err) {
+      console.error(`Redis expire error for key ${key}:`, err);
+      throw err;
+    }
+  },
 };

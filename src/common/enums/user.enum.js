@@ -18,3 +18,8 @@ export const fileEnum = {
   video: ["video/mpeg"],
   pdf: ["application/pdf"],
 };
+
+export const userEvents = {
+  confirmEmail: "confirmEmail",
+  forgetPassword: "forgetPassword",
+};

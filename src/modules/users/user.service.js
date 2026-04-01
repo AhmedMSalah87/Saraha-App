@@ -11,13 +11,15 @@ import { tokenModel } from "../../db/models/token.model.js";
 import { sendEmailVerification } from "../../common/utils/sendEmail.js";
 import { generateOTP } from "../../common/utils/generateOTP.js";
 import { redisRepository } from "../../db/redis/redis.repository.js";
-import { providerEnum } from "../../common/enums/user.enum.js";
+import { providerEnum, userEvents } from "../../common/enums/user.enum.js";
 import {
   AuthError,
   NotFoundError,
   DuplicateEntryError,
   ValidationError,
 } from "../../errors/appErrors.js";
+import { eventEmitter } from "../../common/utils/emailEvent.js";
+import { getRemainingTime } from "../../common/utils/getRemainingTime.js";
 
 export const userRepo = new DatabaseRepository(userModel);
 const profileViewRepo = new DatabaseRepository(profileViewsModel);
@@ -40,20 +42,72 @@ export const createUser = async (req, res, next) => {
   });
 
   const otp = generateOTP();
-  const hashedOTP = await hashValue(otp.toString());
+  const hashedOTP = await hashValue(otp);
 
-  await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
-
-  try {
+  eventEmitter.emit(userEvents.confirmEmail, async () => {
+    await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
     await sendEmailVerification(email, otp);
-  } catch (error) {
-    await redisRepository.deleteCache(`otp:${email}`);
-    next(error);
-  }
+    await redisRepository.setCache(`otp:${email}:max_attempts`, 1);
+  });
 
   res.status(201).json({
     message: "User created successfully. Verification OTP sent to email.",
   });
+};
+
+export const resendOTP = async (req, res, next) => {
+  const { email } = req.body;
+  const user = await userRepo.findOne({
+    email,
+    isVerified: false,
+    provider: providerEnum.system,
+  });
+
+  if (!user) {
+    return next(new NotFoundError("user"));
+  }
+
+  const isBlocked = await redisRepository.getCache(`otp:${email}:blocked`);
+  if (isBlocked) {
+    return next(
+      new AuthError(
+        "you are blocked. Please wait for 30 minutes to resend new OTP",
+      ),
+    );
+  }
+
+  const otpTTL = await redisRepository.cacheTTL(`otp:${email}`);
+  if (otpTTL > 0) {
+    return next(
+      new AuthError(
+        `please wait ${otpTTL > 60 ? Math.ceil(otpTTL / 60) : otpTTL} ${otpTTL > 60 ? "minutes" : "seconds"} until sending new OTP`,
+      ),
+    );
+  }
+  const otpMaxAttempts = await redisRepository.getCache(
+    `otp:${email}:max_attempts`,
+  );
+
+  if (otpMaxAttempts >= 5) {
+    await redisRepository.setCache(`otp:${email}:blocked`, 1, 1800);
+    await redisRepository.expireCache(`otp:${email}:max_attempts`, 1800);
+    return next(
+      new AuthError(
+        "you exceeded 5 attempts of sending OTP. Please wait for 30 minutes to resend new OTP",
+      ),
+    );
+  }
+
+  const otp = generateOTP();
+  const hashedOTP = await hashValue(otp);
+
+  eventEmitter.emit(userEvents.confirmEmail, async () => {
+    await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
+    await sendEmailVerification(email, otp);
+    await redisRepository.increment(`otp:${email}:max_attempts`);
+  });
+
+  res.status(200).json({ message: "Verification OTP sent to email" });
 };
 
 export const verifyEmail = async (req, res, next) => {
@@ -83,6 +137,7 @@ export const verifyEmail = async (req, res, next) => {
   await existingUser.save();
 
   await redisRepository.deleteCache(`otp:${email}`);
+  await redisRepository.deleteCache(`otp:${email}:max_attempts`);
 
   res.status(200).json({ message: "email verified successfully" });
 };
@@ -143,7 +198,14 @@ export const signIn = async (req, res, next) => {
   const isMatched = await matchValue(password, existingUser.password);
 
   if (!isMatched) {
-    return next(new ValidationError("Invalid password"));
+    const remainingTime = req.rateLimit.resetTime;
+    const remainingMinutes = getRemainingTime(remainingTime);
+    const remainingAttempts = req.rateLimit.remaining;
+    return next(
+      new ValidationError(
+        `${remainingAttempts > 0 ? `Invalid password. you have ${remainingAttempts} attempts` : `you exceeded your attempts. please try again after ${remainingMinutes}`}`,
+      ),
+    );
   }
 
   const jwtid = randomUUID();
@@ -301,4 +363,64 @@ export const logout = async (req, res, next) => {
   });
 
   res.status(200).json({ message: "logged out successfully" });
+};
+
+export const forgetPassword = async (req, res, next) => {
+  const { email } = req.body;
+  const existingUser = await userRepo.findOne({
+    email,
+    isVerified: true,
+    provider: providerEnum.system,
+  });
+
+  if (!existingUser) {
+    return next(new NotFoundError("user"));
+  }
+
+  const otp = generateOTP();
+  const hashedOTP = await hashValue(otp);
+
+  eventEmitter.emit(userEvents.forgetPassword, async () => {
+    await redisRepository.setCache(
+      `otp:${email}:forgetPassword`,
+      hashedOTP,
+      600,
+    );
+    await sendEmailVerification(email, otp);
+  });
+
+  res.status(200).json({ message: "otp send for password reset" });
+};
+//reset password after using confirm password route
+export const resetPassword = async (req, res, next) => {
+  const { email, otp, password } = req.body;
+  const hashedOTP = await redisRepository.getCache(
+    `otp:${email}:forgetPassword`,
+  );
+
+  if (!hashedOTP) {
+    return next(new AuthError("OTP has expired", "OTP_EXPIRED"));
+  }
+
+  const isMatched = await matchValue(otp, hashedOTP);
+
+  if (!isMatched) {
+    return next(new ValidationError("Invalid OTP"));
+  }
+
+  const user = await userRepo.findAndUpdate(
+    {
+      email,
+      isVerified: true,
+      provider: providerEnum.system,
+    },
+    { password: await hashValue(password), changePasswordAt: new Date() },
+  );
+  if (!user) {
+    return next(new NotFoundError("user"));
+  }
+
+  await redisRepository.deleteCache(`otp:${email}:forgetPassword`);
+
+  res.status(200).json({ message: "password has reset successfully" });
 };
