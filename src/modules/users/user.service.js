@@ -20,6 +20,8 @@ import {
 } from "../../errors/appErrors.js";
 import { eventEmitter } from "../../common/utils/emailEvent.js";
 import { getRemainingTime } from "../../common/utils/getRemainingTime.js";
+import { getToken } from "../../common/utils/getToken.js";
+import { emailLimiter } from "../../common/middleware/rateLimiter.js";
 
 export const userRepo = new DatabaseRepository(userModel);
 const profileViewRepo = new DatabaseRepository(profileViewsModel);
@@ -221,6 +223,8 @@ export const signIn = async (req, res, next) => {
     { expiresIn: "30d", jwtid },
   );
 
+  emailLimiter.resetKey(email); // useful only to reset counter for number of attempts after user has logged in successfully
+
   res.status(200).json({
     message: "user logged in successfully",
     accessToken,
@@ -320,18 +324,7 @@ export const changePassword = async (req, res, next) => {
 };
 
 export const useRefreshToken = async (req, res, next) => {
-  const auth = req.headers?.authorization;
-  if (!auth) {
-    return next(new AuthError("no authentication header provided in request"));
-  }
-  const [prefix, token] = auth.split(" ");
-  if (prefix !== "Bearer") {
-    return next(
-      new AuthError(
-        "Invalid authorization header format. Bearer token required",
-      ),
-    );
-  }
+  const token = getToken(req);
   if (!token) {
     return next(new AuthError("no token provided"));
   }

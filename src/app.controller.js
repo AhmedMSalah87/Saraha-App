@@ -4,10 +4,11 @@ import { userRouter } from "./modules/users/user.controller.js";
 import { messageRouter } from "./modules/messages/message.controller.js";
 import { connectRedis } from "./db/redis/redis.connect.js";
 import { AppError } from "./errors/appErrors.js";
-import { appLimiter } from "./common/middleware/rateLimiter.js";
+import { ipLimiter } from "./common/middleware/rateLimiter.js";
 const app = express();
 
 export const bootstrap = () => {
+  app.use(ipLimiter);
   app.use(express.json());
   checkDBconnection();
   connectRedis();

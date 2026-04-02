@@ -38,3 +38,38 @@ export const changePasswordSchema = {
     })
     .required(),
 };
+
+export const updateUserSchema = {
+  body: joi
+    .object({
+      firstName: validationRules.firstName,
+      lastName: validationRules.lastName,
+      email: validationRules.email,
+    })
+    .required(),
+};
+
+const emailOtpSchema = joi.object({
+  email: validationRules.email.required(),
+  otp: validationRules.otp.required(),
+});
+
+export const verifyEmailSchema = {
+  body: emailOtpSchema.required(),
+};
+
+export const resetPasswordSchema = {
+  body: emailOtpSchema
+    .append({
+      password: validationRules.password.required(),
+    })
+    .required(),
+};
+
+export const emailSchema = {
+  body: joi
+    .object({
+      email: validationRules.email.required(),
+    })
+    .required(),
+};

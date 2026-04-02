@@ -20,9 +20,13 @@ import { optionalAuth } from "../../common/middleware/optionalAuth.js";
 import { validate } from "../../common/middleware/validate.js";
 import {
   changePasswordSchema,
+  emailSchema,
   profileSchema,
+  resetPasswordSchema,
   signInSchema,
   signUpSchema,
+  updateUserSchema,
+  verifyEmailSchema,
 } from "./user.validation.js";
 import { uploadCloud } from "../../common/middleware/multer.js";
 import { fileEnum } from "../../common/enums/user.enum.js";
@@ -30,6 +34,7 @@ import { messageRouter } from "../messages/message.controller.js";
 import {
   emailLimiter,
   ipLimiter,
+  uploadLimiter,
 } from "../../common/middleware/rateLimiter.js";
 
 export const userRouter = Router();
@@ -37,15 +42,9 @@ export const userRouter = Router();
 userRouter.use("/:id/messages", messageRouter); // any request go with this route should go to message router
 
 userRouter.post("/signup", validate(signUpSchema), createUser);
-userRouter.post("/verify-email", verifyEmail);
-userRouter.post("/resend-otp", resendOTP);
-userRouter.post(
-  "/signin",
-  ipLimiter,
-  emailLimiter,
-  validate(signInSchema),
-  signIn,
-);
+userRouter.post("/verify-email", validate(verifyEmailSchema), verifyEmail);
+userRouter.post("/resend-otp", validate(emailSchema), resendOTP);
+userRouter.post("/signin", emailLimiter, validate(signInSchema), signIn);
 userRouter.get(
   "/profile/:id",
   optionalAuth,
@@ -54,12 +53,18 @@ userRouter.get(
 );
 
 userRouter.get("/profile/:id/share", validate(profileSchema), shareProfileLink);
-userRouter.patch("/profile", authMiddleware, updateUser);
+userRouter.patch(
+  "/profile",
+  authMiddleware,
+  validate(updateUserSchema),
+  updateUser,
+);
 
 userRouter.post("/refreshToken", useRefreshToken);
 userRouter.post(
   "/upload",
   authMiddleware,
+  uploadLimiter,
   uploadCloud(fileEnum.image).fields([
     { name: "avatar", maxCount: 1 },
     { name: "gallery", maxCount: 5 },
@@ -74,5 +79,9 @@ userRouter.patch(
   changePassword,
 );
 userRouter.post("/logout", authMiddleware, logout);
-userRouter.patch("/forget-password", forgetPassword);
-userRouter.patch("/reset-password", resetPassword);
+userRouter.patch("/forget-password", validate(emailSchema), forgetPassword);
+userRouter.patch(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  resetPassword,
+);

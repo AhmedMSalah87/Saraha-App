@@ -2,19 +2,9 @@ import jwt from "jsonwebtoken";
 import { userRepo } from "../../modules/users/user.service.js";
 import { tokenModel } from "../../db/models/token.model.js";
 import { AuthError, NotFoundError } from "../../errors/appErrors.js";
+import { getToken } from "../utils/getToken.js";
 export const authMiddleware = async (req, res, next) => {
-  const auth = req.headers?.authorization;
-  if (!auth) {
-    return next(new AuthError("no authentication header provided in request"));
-  }
-  const [prefix, token] = auth.split(" ");
-  if (prefix !== "Bearer") {
-    return next(
-      new AuthError(
-        "Invalid authorization header format. Bearer token required",
-      ),
-    );
-  }
+  const token = getToken(req);
   if (!token) {
     return next(new AuthError("no token provided"));
   }

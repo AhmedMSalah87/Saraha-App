@@ -1,9 +1,10 @@
 import jwt from "jsonwebtoken";
 import { tokenModel } from "../../db/models/token.model.js";
 import { AuthError } from "../../errors/appErrors.js";
+import { getToken } from "../utils/getToken.js";
 
 export const optionalAuth = async (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
+  const token = getToken(req);
 
   if (!token) {
     return next();
