@@ -12,5 +12,5 @@ export const validationRules = {
   email: Joi.string().email(),
   password: Joi.string().min(8).max(20),
   gender: Joi.string().valid(...Object.values(GenderEnum)),
-  otp: Joi.number().integer().min(100000).max(999999),
+  otp: Joi.string().length(6),
 };
