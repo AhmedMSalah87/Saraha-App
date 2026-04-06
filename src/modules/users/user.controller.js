@@ -14,7 +14,6 @@ import {
   forgetPassword,
   resetPassword,
   resendOTP,
-  deleteUser,
 } from "./user.service.js";
 import { authMiddleware } from "../../common/middleware/auth.js";
 import { optionalAuth } from "../../common/middleware/optionalAuth.js";
@@ -86,4 +85,3 @@ userRouter.patch(
   validate(resetPasswordSchema),
   resetPassword,
 );
-userRouter.delete("/profile", authMiddleware, deleteUser);

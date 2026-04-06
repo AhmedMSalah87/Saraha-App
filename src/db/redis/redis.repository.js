@@ -35,11 +35,11 @@ export const redisRepository = {
     }
   },
 
-  async deleteCache(key) {
+  async deleteCache(...keys) {
     try {
-      await redisClient.del(key);
+      await redisClient.del(keys);
     } catch (err) {
-      console.error(`Redis DEL error for key ${key}:`, err);
+      console.error(`Redis DEL error for key ${keys}:`, err);
       throw err;
     }
   },

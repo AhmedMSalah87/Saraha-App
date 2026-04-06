@@ -48,6 +48,7 @@ export const createUser = async (req, res, next) => {
 
   eventEmitter.emit(userEvents.confirmEmail, async () => {
     await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
+    await redisRepository.setCache(`otp:${email}:cooldown`, 1, 60);
     await sendEmailVerification(email, otp);
     await redisRepository.setCache(`otp:${email}:max_attempts`, 1);
   });
@@ -78,21 +79,27 @@ export const resendOTP = async (req, res, next) => {
     );
   }
 
-  const otpTTL = await redisRepository.cacheTTL(`otp:${email}`);
-  if (otpTTL > 0) {
+  const otpCooldownTTL = await redisRepository.cacheTTL(
+    `otp:${email}:cooldown`,
+  );
+
+  if (otpCooldownTTL > 0) {
     return next(
-      new AuthError(
-        `please wait ${otpTTL > 60 ? Math.ceil(otpTTL / 60) : otpTTL} ${otpTTL > 60 ? "minutes" : "seconds"} until sending new OTP`,
-      ),
+      new AuthError(`you can resend otp after ${otpCooldownTTL} seconds`),
     );
   }
+
   const otpMaxAttempts = await redisRepository.getCache(
     `otp:${email}:max_attempts`,
   );
 
   if (otpMaxAttempts >= 5) {
     await redisRepository.setCache(`otp:${email}:blocked`, 1, 1800);
-    await redisRepository.expireCache(`otp:${email}:max_attempts`, 1800);
+    await redisRepository.deleteCache(
+      `otp:${email}:max_attempts`,
+      `otp:${email}:cooldown`,
+      `otp:${email}`,
+    );
     return next(
       new AuthError(
         "you exceeded 5 attempts of sending OTP. Please wait for 30 minutes to resend new OTP",
@@ -105,6 +112,7 @@ export const resendOTP = async (req, res, next) => {
 
   eventEmitter.emit(userEvents.confirmEmail, async () => {
     await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
+    await redisRepository.setCache(`otp:${email}:cooldown`, 1, 60);
     await sendEmailVerification(email, otp);
     await redisRepository.increment(`otp:${email}:max_attempts`);
   });
@@ -123,6 +131,16 @@ export const verifyEmail = async (req, res, next) => {
   if (!existingUser) {
     return next(new NotFoundError("user"));
   }
+
+  const isBlocked = await redisRepository.getCache(`otp:${email}:blocked`);
+  if (isBlocked) {
+    return next(
+      new AuthError(
+        "you are blocked. Please wait for 30 minutes to resend new OTP",
+      ),
+    );
+  }
+
   const hashedOTP = await redisRepository.getCache(`otp:${email}`);
 
   if (!hashedOTP) {
