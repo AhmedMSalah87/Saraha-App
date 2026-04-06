@@ -108,8 +108,8 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[User Sign-In] --> B[Server validates credentials]
-    B --> C[Generate Access Token "15m"]
-    B --> D[Generate Refresh Token "30d"]
+    B --> C["Generate Access Token - 15m"]
+    B --> D["Generate Refresh Token - 30d"]
     C --> E[Use Access Token for API requests]
     D --> F[Use Refresh Token to get new Access Token]
     F --> G[Server verifies Refresh Token]
