@@ -122,9 +122,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Server generates OTP] --> B[Store hashed OTP: otp-{email}, TTL 10m]
-    B --> C[Store cooldown: otp-{email}-cooldown, TTL 60s]
-    B --> D[Store resendAttempts: otp-{email}-resendAttempts]
+    A[Server generates OTP] --> B[Store hashed OTP: otp-email, TTL 10m]
+    B --> C[Store cooldown: otp-email-cooldown, TTL 60s]
+    B --> D[Store resendAttempts: otp-email-resendAttempts]
     E[User requests resend OTP] --> F{Check block key?}
     F -- Yes --> G[Return Blocked Error]
     F -- No --> H{Check cooldown?}
