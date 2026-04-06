@@ -132,3 +132,4 @@ flowchart TD
     H -- No --> J{Check resendAttempts >= 5?}
     J -- Yes --> K[Set block key, delete OTP & attempts]
     J -- No --> L[Increment resendAttempts, send OTP]
+```
