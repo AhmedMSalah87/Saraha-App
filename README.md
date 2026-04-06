@@ -101,3 +101,34 @@ flowchart TD
     H -- Yes --> I[User Verified / Password Reset]
     H -- No --> J[Return Validation Error]
     I --> K[Delete Redis keys]
+```
+
+### 2️⃣ JWT Authentication Flow
+
+```mermaid
+flowchart TD
+    A[User Sign-In] --> B[Server validates credentials]
+    B --> C[Generate Access Token (15m)]
+    B --> D[Generate Refresh Token (30d)]
+    C --> E[Use Access Token for API requests]
+    D --> F[Use Refresh Token to get new Access Token]
+    F --> G[Server verifies Refresh Token]
+    G --> H{Token revoked?}
+    H -- No --> I[Issue new Access Token]
+    H -- Yes --> J[Return Auth Error]
+```
+
+### 3️⃣ Redis Usage Flow
+
+```mermaid
+flowchart TD
+    A[Server generates OTP] --> B[Store hashed OTP: otp:{email}, TTL 10m]
+    B --> C[Store cooldown: otp:{email}:cooldown, TTL 60s]
+    B --> D[Store resendAttempts: otp:{email}:resendAttempts]
+    E[User requests resend OTP] --> F{Check block key?}
+    F -- Yes --> G[Return Blocked Error]
+    F -- No --> H{Check cooldown?}
+    H -- Yes --> I[Return Wait Error]
+    H -- No --> J{Check resendAttempts >= 5?}
+    J -- Yes --> K[Set block key, delete OTP & attempts]
+    J -- No --> L[Increment resendAttempts, send OTP]
