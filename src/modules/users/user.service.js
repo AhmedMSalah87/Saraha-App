@@ -22,6 +22,7 @@ import { eventEmitter } from "../../common/utils/emailEvent.js";
 import { getRemainingTime } from "../../common/utils/getRemainingTime.js";
 import { getToken } from "../../common/utils/getToken.js";
 import { emailLimiter } from "../../common/middleware/rateLimiter.js";
+import { otpKeys } from "../../common/utils/otpKeys.js";
 
 export const userRepo = new DatabaseRepository(userModel);
 const profileViewRepo = new DatabaseRepository(profileViewsModel);
@@ -47,10 +48,10 @@ export const createUser = async (req, res, next) => {
   const hashedOTP = await hashValue(otp);
 
   eventEmitter.emit(userEvents.confirmEmail, async () => {
-    await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
-    await redisRepository.setCache(`otp:${email}:cooldown`, 1, 60);
+    await redisRepository.setCache(otpKeys.otp(email), hashedOTP, 600);
+    await redisRepository.setCache(otpKeys.cooldown(email), 1, 60);
     await sendEmailVerification(email, otp);
-    await redisRepository.setCache(`otp:${email}:max_attempts`, 1);
+    await redisRepository.setCache(otpKeys.resendAttempts(email), 1);
   });
 
   res.status(201).json({
@@ -70,7 +71,7 @@ export const resendOTP = async (req, res, next) => {
     return next(new NotFoundError("user"));
   }
 
-  const isBlocked = await redisRepository.getCache(`otp:${email}:blocked`);
+  const isBlocked = await redisRepository.getCache(otpKeys.block(email));
   if (isBlocked) {
     return next(
       new AuthError(
@@ -80,7 +81,7 @@ export const resendOTP = async (req, res, next) => {
   }
 
   const otpCooldownTTL = await redisRepository.cacheTTL(
-    `otp:${email}:cooldown`,
+    otpKeys.cooldown(email),
   );
 
   if (otpCooldownTTL > 0) {
@@ -90,15 +91,15 @@ export const resendOTP = async (req, res, next) => {
   }
 
   const otpMaxAttempts = await redisRepository.getCache(
-    `otp:${email}:max_attempts`,
+    otpKeys.resendAttempts(email),
   );
 
   if (otpMaxAttempts >= 5) {
-    await redisRepository.setCache(`otp:${email}:blocked`, 1, 1800);
+    await redisRepository.setCache(otpKeys.block(email), 1, 1800);
     await redisRepository.deleteCache(
-      `otp:${email}:max_attempts`,
-      `otp:${email}:cooldown`,
-      `otp:${email}`,
+      otpKeys.resendAttempts(email),
+      otpKeys.cooldown(email),
+      otpKeys.otp(email),
     );
     return next(
       new AuthError(
@@ -111,10 +112,10 @@ export const resendOTP = async (req, res, next) => {
   const hashedOTP = await hashValue(otp);
 
   eventEmitter.emit(userEvents.confirmEmail, async () => {
-    await redisRepository.setCache(`otp:${email}`, hashedOTP, 600);
-    await redisRepository.setCache(`otp:${email}:cooldown`, 1, 60);
+    await redisRepository.setCache(otpKeys.otp(email), hashedOTP, 600);
+    await redisRepository.setCache(otpKeys.cooldown(email), 1, 60);
     await sendEmailVerification(email, otp);
-    await redisRepository.increment(`otp:${email}:max_attempts`);
+    await redisRepository.increment(otpKeys.resendAttempts(email));
   });
 
   res.status(200).json({ message: "Verification OTP sent to email" });
@@ -132,7 +133,7 @@ export const verifyEmail = async (req, res, next) => {
     return next(new NotFoundError("user"));
   }
 
-  const isBlocked = await redisRepository.getCache(`otp:${email}:blocked`);
+  const isBlocked = await redisRepository.getCache(otpKeys.block(email));
   if (isBlocked) {
     return next(
       new AuthError(
@@ -141,7 +142,7 @@ export const verifyEmail = async (req, res, next) => {
     );
   }
 
-  const hashedOTP = await redisRepository.getCache(`otp:${email}`);
+  const hashedOTP = await redisRepository.getCache(otpKeys.otp(email));
 
   if (!hashedOTP) {
     return next(new AuthError("OTP has expired", "OTP_EXPIRED"));
@@ -156,8 +157,10 @@ export const verifyEmail = async (req, res, next) => {
   existingUser.isVerified = true;
   await existingUser.save();
 
-  await redisRepository.deleteCache(`otp:${email}`);
-  await redisRepository.deleteCache(`otp:${email}:max_attempts`);
+  await redisRepository.deleteCache(
+    otpKeys.otp(email),
+    otpKeys.resendAttempts(email),
+  );
 
   res.status(200).json({ message: "email verified successfully" });
 };
